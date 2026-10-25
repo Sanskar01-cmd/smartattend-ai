@@ -1,0 +1,26 @@
+# ==========================================
+# SmartAttend AI - Python Dependencies
+# ==========================================
+
+# Core Django framework and REST API
+django>=5.0.0,<6.0.0
+djangorestframework>=3.14.0,<3.16.0
+
+# CORS headers for React Vite frontend integration
+django-cors-headers>=4.3.0
+
+# Environment variables management
+python-dotenv>=1.0.0
+
+# Production WSGI server and static file serving for Render
+gunicorn>=21.2.0
+whitenoise>=6.6.0
+
+# Database adapters
+dj-database-url>=2.1.0
+pymysql>=1.1.0
+cryptography>=42.0.0
+
+# QR code generation engine (prepared for Prompt 3)
+qrcode[pil]>=7.4.2
+pillow>=10.0.0

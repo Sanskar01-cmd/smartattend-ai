@@ -1,0 +1,281 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { getMyPassesApi, cancelMyPassApi } from '../services/api';
+import { BackendRegistration } from '../types';
+import { Badge } from '../components/Badge';
+import {
+  QrCodeIcon,
+  AlertIcon,
+  ClockIcon,
+  MapPinIcon,
+  CheckIcon,
+  RefreshIcon,
+} from '../components/Icons';
+
+interface MyPassesViewProps {
+  onRequireLogin?: () => void;
+}
+
+export const MyPassesView: React.FC<MyPassesViewProps> = ({ onRequireLogin }) => {
+  const [passes, setPasses] = useState<BackendRegistration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  const fetchPasses = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getMyPassesApi();
+      setPasses(res.passes);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not fetch your digital passes.';
+      setError(msg);
+      // Fallback preview
+      setPasses([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPasses();
+  }, [fetchPasses]);
+
+  const handleCancelPass = async (regId: number, title: string) => {
+    if (!window.confirm(`Are you sure you want to cancel your registration for "${title}"?`)) {
+      return;
+    }
+
+    setCancellingId(regId);
+    try {
+      await cancelMyPassApi(regId);
+      setActionNotice(`Registration for "${title}" has been cancelled.`);
+      fetchPasses();
+      setTimeout(() => setActionNotice(null), 4000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not cancel pass.';
+      setError(msg);
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const handleSaveOfflinePass = (pass: BackendRegistration) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>SmartAttend AI QR Pass - ${pass.event?.title}</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 30px; background: #f8fafc; color: #0f172a; }
+            .card { border: 2px solid #0284c7; border-radius: 16px; padding: 24px; max-width: 420px; margin: auto; background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            h2 { margin: 4px 0 12px; color: #0369a1; font-size: 20px; }
+            .meta { font-size: 13px; color: #475569; margin-bottom: 16px; line-height: 1.5; }
+            .qr-img { width: 220px; height: 220px; margin: 12px auto; display: block; }
+            .token { font-family: monospace; font-size: 14px; font-weight: bold; background: #f1f5f9; padding: 6px 12px; border-radius: 8px; display: inline-block; }
+            .footer { font-size: 11px; color: #64748b; margin-top: 16px; border-top: 1px dashed #cbd5e1; padding-top: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <div style="font-size: 11px; font-weight: bold; color: #0284c7; letter-spacing: 1px;">SMARTATTEND AI • DIGITAL PASS</div>
+            <h2>${pass.event?.title || 'Campus Event'}</h2>
+            <div class="meta">
+              <strong>Attendee:</strong> ${pass.student?.full_name} (${pass.student?.student_id})<br/>
+              <strong>Date & Time:</strong> ${pass.event?.date} at ${pass.event?.time}<br/>
+              <strong>Venue:</strong> ${pass.event?.venue}
+            </div>
+            ${
+              pass.qr_data_url
+                ? `<img src="${pass.qr_data_url}" class="qr-img" alt="QR Code" />`
+                : `<div class="token">${pass.pass_token}</div>`
+            }
+            <div class="token">${pass.pass_token}</div>
+            <div class="footer">
+              Strictly QR-Matrix Code • No Biometric Scanning Required<br/>
+              Present this pass at the gate scanner station for verified entrance.
+            </div>
+          </div>
+          <script>window.onload = function() { window.print(); }</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              My QR Attendance Passes
+            </h1>
+            <Badge variant="primary" size="sm">LIVE PASSES</Badge>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-400">
+            Encrypted digital QR passes generated by SmartAttend AI. Present on your mobile device at entrance scanner.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchPasses}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-2"
+          >
+            <RefreshIcon className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Passes</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mandatory QR-Only Architectural Banner */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+        <div className="p-2.5 rounded-xl bg-blue-950 border border-blue-800/50 text-cyan-400 flex-shrink-0">
+          <QrCodeIcon className="w-6 h-6" />
+        </div>
+        <div className="space-y-1 text-xs">
+          <h4 className="font-bold text-white text-sm">
+            Strict QR Pass Attendance Policy
+          </h4>
+          <p className="text-slate-300 leading-relaxed">
+            Per project capstone requirements, SmartAttend AI enforces touchless QR passes.
+            <strong> Facial recognition, biometric enrollment, and liveness checks are strictly prohibited.</strong>
+            Organizers scan your dynamic 2D QR matrix token at the door for sub-second verification.
+          </p>
+        </div>
+      </div>
+
+      {/* Action / Error notices */}
+      {actionNotice && (
+        <div className="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-800 text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
+          <CheckIcon className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <span>{actionNotice}</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-800 text-xs text-rose-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertIcon className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+          {onRequireLogin && (
+            <button
+              onClick={onRequireLogin}
+              className="px-3 py-1 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold"
+            >
+              Sign In
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Passes Grid */}
+      {loading ? (
+        <div className="py-16 text-center text-slate-500 text-xs">
+          Retrieving your verified QR passes...
+        </div>
+      ) : passes.length === 0 ? (
+        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-12 text-center max-w-lg mx-auto space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 text-slate-500 mx-auto flex items-center justify-center">
+            <QrCodeIcon className="w-6 h-6" />
+          </div>
+          <h3 className="text-base font-bold text-white">No Active QR Passes</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            You have not registered for any upcoming events yet. Browse campus workshops and click &ldquo;Register &amp; Get Pass&rdquo; to generate your first QR pass!
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {passes.map((pass) => (
+            <div
+              key={pass.id}
+              className="relative rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 p-5 shadow-xl flex flex-col justify-between overflow-hidden"
+            >
+              {/* Status Header */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-blue-950 text-cyan-400 border border-blue-800/40">
+                    {pass.event?.category || 'Workshop'}
+                  </span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold ${
+                      pass.status === 'Attended'
+                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                        : 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                    }`}
+                  >
+                    {pass.status === 'Attended' ? 'ATTENDED / VERIFIED' : 'ACTIVE PASS'}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-bold text-white leading-snug line-clamp-2">
+                    {pass.event?.title}
+                  </h3>
+                  <div className="mt-1 space-y-1 text-[11px] text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      <ClockIcon className="w-3.5 h-3.5 text-brand-400" />
+                      <span>{pass.event?.date} • {pass.event?.time}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <MapPinIcon className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{pass.event?.venue}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* QR Matrix Display */}
+                <div className="p-4 rounded-xl bg-white flex flex-col items-center justify-center my-2 shadow-inner">
+                  {pass.qr_data_url ? (
+                    <img
+                      src={pass.qr_data_url}
+                      alt="Verified QR Pass"
+                      className="w-44 h-44 object-contain"
+                    />
+                  ) : (
+                    <div className="w-44 h-44 bg-slate-100 flex items-center justify-center text-slate-400 font-mono text-xs">
+                      [QR Matrix Token]
+                    </div>
+                  )}
+                  <span className="mt-2 text-[11px] font-mono font-bold text-slate-900 tracking-wider">
+                    {pass.pass_token}
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-slate-400 flex justify-between px-1">
+                  <span>Student: <strong className="text-slate-200">{pass.student?.full_name}</strong></span>
+                  <span className="font-mono text-cyan-400">{pass.student?.student_id}</span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="mt-4 pt-3 border-t border-slate-800/80 flex gap-2">
+                <button
+                  onClick={() => handleSaveOfflinePass(pass)}
+                  className="flex-1 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span>Save / Print</span>
+                </button>
+                {pass.status !== 'Attended' && (
+                  <button
+                    onClick={() => handleCancelPass(pass.id, pass.event?.title || 'this event')}
+                    disabled={cancellingId === pass.id}
+                    className="py-2 px-3 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 text-rose-300 text-xs font-semibold transition-colors"
+                  >
+                    {cancellingId === pass.id ? 'Cancelling...' : 'Cancel'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
